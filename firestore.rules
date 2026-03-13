@@ -20,21 +20,21 @@ service cloud.firestore {
     // User Profiles
     // ===============================================================
     match /users/{userId} {
-      allow read: if isOwner(userId);
-      allow write: if isOwner(userId) && 
-        request.resource.data.uid == userId &&
-        isValidEmail(request.resource.data.email);
+      allow read, write: if isOwner(userId);
 
       // Songs subcollection
       match /songs/{songId} {
-        allow read: if isOwner(userId);
-        allow write: if isOwner(userId) && request.resource.data.uid == userId;
+        allow read, write: if isOwner(userId);
       }
 
       // Figures subcollection
       match /figures/{figureId} {
-        allow read: if isOwner(userId);
-        allow write: if isOwner(userId) && request.resource.data.uid == userId;
+        allow read, write: if isOwner(userId);
+      }
+
+      // Presets subcollection
+      match /presets/{presetId} {
+        allow read, write: if isOwner(userId);
       }
     }
   }
