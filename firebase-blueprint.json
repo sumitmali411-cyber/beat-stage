@@ -1,0 +1,64 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Stores user preferences and profile information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "lastLogin": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email"]
+    },
+    "UserSong": {
+      "title": "User Song",
+      "description": "Metadata for a song in the user's pool",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "name": { "type": "string" },
+        "artist": { "type": "string" },
+        "url": { "type": "string" },
+        "duration": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "name", "url"]
+    },
+    "UserFigure": {
+      "title": "User Figure",
+      "description": "Configuration for a stage figure",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "type": { "type": "string", "enum": ["2d", "3d", "glb"] },
+        "name": { "type": "string" },
+        "color": { "type": "string" },
+        "position": { "type": "array", "items": { "type": "number" } },
+        "rotation": { "type": "array", "items": { "type": "number" } },
+        "scale": { "type": "number" },
+        "sensitivity": { "type": "number" },
+        "speed": { "type": "number" },
+        "intensity": { "type": "number" },
+        "url": { "type": "string" }
+      },
+      "required": ["uid", "type", "name"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profile documents"
+    },
+    "/users/{userId}/songs/{songId}": {
+      "schema": "UserSong",
+      "description": "User's collection of songs"
+    },
+    "/users/{userId}/figures/{figureId}": {
+      "schema": "UserFigure",
+      "description": "User's collection of stage figures"
+    }
+  }
+}

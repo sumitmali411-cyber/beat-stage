@@ -1,0 +1,5 @@
+{
+  "name": "BeatStage",
+  "description": "A 3D/2D music visualizer with dancing figures driven by real-time audio analysis.",
+  "requestFramePermissions": []
+}
