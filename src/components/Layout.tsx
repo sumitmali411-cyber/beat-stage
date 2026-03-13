@@ -489,10 +489,10 @@ const Sidebar = () => {
                           fig.spotlight ? "bg-accent-cool" : "bg-white/10"
                         )}
                       >
-                        <span className={cn(
-                          "absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-all",
-                          fig.spotlight ? "left-4.5" : "left-0.5"
-                        )} />
+                        <span
+                          className="absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-all"
+                          style={{ left: fig.spotlight ? '18px' : '2px' }}
+                        />
                       </button>
                     </div>
                   </motion.div>
@@ -538,7 +538,30 @@ const Sidebar = () => {
 // --- Control Bar Components ---
 
 const ControlBar = () => {
-  const { currentSong, isPlaying, setIsPlaying, volume, setVolume, isRecording, setIsRecording } = useStore();
+  const { currentSong, isPlaying, setIsPlaying, volume, setVolume, isRecording, setIsRecording,
+          playbackProgress, setPlaybackProgress } = useStore();
+  const rafRef = useRef<number>(0);
+
+  // Real progress tracking via rAF — reads AudioEngine directly
+  useEffect(() => {
+    const tick = () => {
+      if (useStore.getState().isPlaying) {
+        setPlaybackProgress(audioEngine.getProgress());
+      }
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, []);
+
+  // Wire song-ended callback so isPlaying resets automatically
+  useEffect(() => {
+    audioEngine.onEnded = () => {
+      setIsPlaying(false);
+      setPlaybackProgress(0);
+    };
+    return () => { audioEngine.onEnded = null; };
+  }, []);
 
   const togglePlay = async () => {
     if (!currentSong) return;
@@ -626,10 +649,9 @@ const ControlBar = () => {
           <button className="text-slate-500 hover:text-white transition-colors"><SkipForward size={20} /></button>
         </div>
         <div className="w-full max-w-md h-1 bg-white/10 rounded-full overflow-hidden relative">
-          <motion.div
-            className="absolute top-0 left-0 h-full bg-accent-cool"
-            animate={{ width: isPlaying ? '100%' : '0%' }}
-            transition={{ duration: currentSong?.duration || 180, ease: 'linear' }}
+          <div
+            className="absolute top-0 left-0 h-full bg-accent-cool transition-none"
+            style={{ width: `${playbackProgress * 100}%` }}
           />
         </div>
       </div>

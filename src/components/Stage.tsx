@@ -2,7 +2,7 @@ import React, { useRef, useMemo, useEffect } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Stars, Float, MeshDistortMaterial, Sphere } from '@react-three/drei';
 import * as THREE from 'three';
-import { useStore, Figure, DanceStyle } from '../state/useStore';
+import { useStore, Figure, DanceStyle, ViewMode } from '../state/useStore';
 import { audioEngine } from '../core/AudioEngine';
 import { db } from '../firebase';
 import { doc, updateDoc } from 'firebase/firestore';
@@ -283,6 +283,9 @@ const Stage2D = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const { figures, background, stageAccentColor } = useStore();
+  // Use a ref so the render loop reads the latest value without restarting
+  const accentRef = useRef(stageAccentColor);
+  useEffect(() => { accentRef.current = stageAccentColor; }, [stageAccentColor]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -318,10 +321,10 @@ const Stage2D = () => {
       ctx.fillRect(0, 0, width, height);
 
       if (data) {
-        // v1: background pulse uses stageAccentColor
+        // v1: background pulse uses stageAccentColor (read from ref — no loop restart)
         const alpha = background === 'neon-grid' ? data.bass * 0.2 : data.bass * 0.1;
         ctx.strokeStyle = background === 'neon-grid'
-          ? stageAccentColor + Math.round(alpha * 255).toString(16).padStart(2, '0')
+          ? accentRef.current + Math.round(alpha * 255).toString(16).padStart(2, '0')
           : `rgba(255,255,255,${alpha})`;
         ctx.lineWidth = 2;
         ctx.beginPath();
@@ -425,7 +428,8 @@ const Stage2D = () => {
       cancelAnimationFrame(animationFrame);
       window.removeEventListener('resize', handleResize);
     };
-  }, [figures, background, stageAccentColor]);
+  // stageAccentColor intentionally excluded — handled via accentRef above
+  }, [figures, background]);
 
   return (
     <div ref={containerRef} className="w-full h-full">
@@ -435,7 +439,7 @@ const Stage2D = () => {
 };
 
 export const StageViewport = () => {
-  const { user, viewMode, selectedFigureId, figures, isTransformOpen, setTransformOpen } = useStore();
+  const { user, viewMode, selectedFigureId, figures, isTransformOpen, setTransformOpen, setViewMode } = useStore();
   const selectedFigure = figures.find(f => f.id === selectedFigureId);
 
   const handleUpdateFigure = async (id: string, updates: any) => {
@@ -456,7 +460,7 @@ export const StageViewport = () => {
       {/* View Mode Toggle Overlay */}
       <div className="absolute top-6 right-6 flex gap-2">
         <button
-          onClick={() => useStore.getState().setViewMode('2d')}
+          onClick={() => setViewMode('2d')}
           className={cn(
             "p-2 rounded-lg border transition-all",
             viewMode === '2d' ? "bg-accent-cool text-black border-accent-cool" : "bg-black/40 text-white border-white/10 hover:bg-white/5"
@@ -465,7 +469,7 @@ export const StageViewport = () => {
           <Layers size={20} />
         </button>
         <button
-          onClick={() => useStore.getState().setViewMode('3d')}
+          onClick={() => setViewMode('3d')}
           className={cn(
             "p-2 rounded-lg border transition-all",
             viewMode === '3d' ? "bg-accent-cool text-black border-accent-cool" : "bg-black/40 text-white border-white/10 hover:bg-white/5"

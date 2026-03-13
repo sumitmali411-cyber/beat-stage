@@ -11,6 +11,7 @@ export interface Song {
 }
 
 export type FigureType = '2d' | '3d' | 'glb';
+export type ViewMode = '2d' | '3d';
 
 // v1: Dance style changes the animation curve per dancer
 export type DanceStyle = 'fluid' | 'sharp' | 'bounce' | 'groove';
@@ -56,7 +57,7 @@ interface AppState {
   volume: number;
 
   // Stage State
-  viewMode: FigureType;
+  viewMode: ViewMode;
   figures: Figure[];
   background: BackgroundType;
   selectedFigureId: string | null;
@@ -68,6 +69,10 @@ interface AppState {
   // v3: Stage presets
   stagePresets: StagePreset[];
 
+  // Playback progress (0–1) for the real progress bar
+  playbackProgress: number;
+  setPlaybackProgress: (p: number) => void;
+
   // Recording State
   isRecording: boolean;
 
@@ -77,7 +82,7 @@ interface AppState {
   setIsPlaying: (playing: boolean) => void;
   setVolume: (volume: number) => void;
 
-  setViewMode: (mode: FigureType) => void;
+  setViewMode: (mode: ViewMode) => void;
   setBackground: (bg: BackgroundType) => void;
   setSelectedFigureId: (id: string | null) => void;
   setTransformOpen: (open: boolean) => void;
@@ -111,6 +116,9 @@ export const useStore = create<AppState>((set) => ({
 
   stageAccentColor: '#00d4ff',
   stagePresets: [],
+
+  playbackProgress: 0,
+  setPlaybackProgress: (p) => set({ playbackProgress: p }),
 
   isRecording: false,
 
