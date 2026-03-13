@@ -12,6 +12,9 @@ export interface Song {
 
 export type FigureType = '2d' | '3d' | 'glb';
 
+// v1: Dance style changes the animation curve per dancer
+export type DanceStyle = 'fluid' | 'sharp' | 'bounce' | 'groove';
+
 export interface Figure {
   id: string;
   type: FigureType;
@@ -24,9 +27,20 @@ export interface Figure {
   intensity: number;
   name: string;
   url?: string; // For GLB models
+  danceStyle?: DanceStyle; // v1: per-dancer animation style
+  spotlight?: boolean;     // v2: emit colored spotlight
 }
 
 export type BackgroundType = 'neon-grid' | 'stars' | 'gradient' | 'space';
+
+// v3: Stage preset - snapshot of the entire stage configuration
+export interface StagePreset {
+  id: string;
+  name: string;
+  background: BackgroundType;
+  stageAccentColor: string;
+  createdAt: string;
+}
 
 interface AppState {
   // Auth State
@@ -40,29 +54,41 @@ interface AppState {
   currentSong: Song | null;
   isPlaying: boolean;
   volume: number;
-  
+
   // Stage State
   viewMode: FigureType;
   figures: Figure[];
   background: BackgroundType;
   selectedFigureId: string | null;
   isTransformOpen: boolean;
-  
+
+  // v1: Stage accent color (the neon glow color)
+  stageAccentColor: string;
+
+  // v3: Stage presets
+  stagePresets: StagePreset[];
+
   // Recording State
   isRecording: boolean;
-  
+
   // Actions
   setSongs: (songs: Song[]) => void;
   setCurrentSong: (song: Song | null) => void;
   setIsPlaying: (playing: boolean) => void;
   setVolume: (volume: number) => void;
-  
+
   setViewMode: (mode: FigureType) => void;
   setBackground: (bg: BackgroundType) => void;
   setSelectedFigureId: (id: string | null) => void;
   setTransformOpen: (open: boolean) => void;
   setFigures: (figures: Figure[]) => void;
-  
+
+  // v1
+  setStageAccentColor: (color: string) => void;
+
+  // v3
+  setStagePresets: (presets: StagePreset[]) => void;
+
   setIsRecording: (recording: boolean) => void;
 }
 
@@ -76,25 +102,31 @@ export const useStore = create<AppState>((set) => ({
   currentSong: null,
   isPlaying: false,
   volume: 0.8,
-  
+
   viewMode: '3d',
   figures: [],
   background: 'neon-grid',
   selectedFigureId: null,
   isTransformOpen: false,
-  
+
+  stageAccentColor: '#00d4ff',
+  stagePresets: [],
+
   isRecording: false,
 
   setSongs: (songs) => set({ songs }),
   setCurrentSong: (song) => set({ currentSong: song, isPlaying: !!song }),
   setIsPlaying: (playing) => set({ isPlaying: playing }),
   setVolume: (volume) => set({ volume }),
-  
+
   setViewMode: (mode) => set({ viewMode: mode }),
   setBackground: (bg) => set({ background: bg }),
   setSelectedFigureId: (id) => set({ selectedFigureId: id }),
   setTransformOpen: (open) => set({ isTransformOpen: open }),
   setFigures: (figures) => set({ figures }),
-  
+
+  setStageAccentColor: (color) => set({ stageAccentColor: color }),
+  setStagePresets: (presets) => set({ stagePresets: presets }),
+
   setIsRecording: (recording) => set({ isRecording: recording }),
 }));

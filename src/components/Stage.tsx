@@ -2,7 +2,7 @@ import React, { useRef, useMemo, useEffect } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Stars, Float, MeshDistortMaterial, Sphere } from '@react-three/drei';
 import * as THREE from 'three';
-import { useStore, Figure } from '../state/useStore';
+import { useStore, Figure, DanceStyle } from '../state/useStore';
 import { audioEngine } from '../core/AudioEngine';
 import { db } from '../firebase';
 import { doc, updateDoc } from 'firebase/firestore';
@@ -16,6 +16,57 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+// v1: Apply dance style to get the position/rotation offsets
+function applyDanceStyle(
+  style: DanceStyle = 'fluid',
+  t: number,
+  speed: number,
+  bass: number,
+  mid: number,
+  high: number,
+  s: number
+): { dy: number; dx: number; rotY: number; armMod: number; headMod: number } {
+  switch (style) {
+    case 'sharp':
+      // Snappy, angular moves — square-wave-ish
+      return {
+        dy: Math.sign(Math.sin(t * 10 * speed)) * bass * 0.35 * s,
+        dx: 0,
+        rotY: Math.sign(Math.sin(t * speed)) * mid * 0.6 * s,
+        armMod: mid * s * 2.5,
+        headMod: high * 0.25 * s,
+      };
+    case 'bounce':
+      // Exaggerated vertical bounce — always upward
+      return {
+        dy: Math.abs(Math.sin(t * 8 * speed)) * bass * 0.65 * s,
+        dx: 0,
+        rotY: Math.sin(t * speed * 0.5) * mid * 0.3 * s,
+        armMod: mid * s * 1.5,
+        headMod: high * 0.3 * s,
+      };
+    case 'groove':
+      // Hip-hop lateral sway + figure-8 torso
+      return {
+        dy: Math.sin(t * 6 * speed) * bass * 0.3 * s,
+        dx: Math.sin(t * 3 * speed) * mid * 0.4 * s,
+        rotY: Math.sin(t * 2 * speed) * 0.4 * s,
+        armMod: (mid + bass * 0.5) * s * 1.8,
+        headMod: high * 0.15 * s,
+      };
+    case 'fluid':
+    default:
+      // Smooth classic sine motion
+      return {
+        dy: Math.sin(t * 10 * speed) * bass * 0.5 * s,
+        dx: 0,
+        rotY: Math.sin(t * speed) * mid * s,
+        armMod: mid * s * 2,
+        headMod: high * 0.2 * s,
+      };
+  }
+}
+
 const FigureGLB = ({ figure }: { figure: Figure }) => {
   const { scene } = useGLTF(figure.url!);
   const groupRef = useRef<THREE.Group>(null);
@@ -27,18 +78,21 @@ const FigureGLB = ({ figure }: { figure: Figure }) => {
     const { bass, mid } = data;
     const s = figure.sensitivity * figure.intensity;
     const speed = figure.speed;
+    const t = state.clock.elapsedTime;
+    const style = figure.danceStyle ?? 'fluid';
+    const { dy, dx, rotY } = applyDanceStyle(style, t, speed, bass, mid, 0, s);
 
-    // React to audio
     groupRef.current.scale.setScalar(figure.scale * (1 + bass * 0.2 * s));
-    groupRef.current.rotation.y = figure.rotation[1] + Math.sin(state.clock.elapsedTime * speed) * mid * 0.5 * s;
-    groupRef.current.position.y = figure.position[1] + Math.sin(state.clock.elapsedTime * 10 * speed) * bass * 0.2 * s;
+    groupRef.current.rotation.y = figure.rotation[1] + rotY;
+    groupRef.current.position.y = figure.position[1] + dy;
+    groupRef.current.position.x = figure.position[0] + dx;
   });
 
   return (
-    <primitive 
+    <primitive
       ref={groupRef}
-      object={scene} 
-      position={figure.position} 
+      object={scene}
+      position={figure.position}
       rotation={figure.rotation}
       scale={figure.scale}
     />
@@ -50,6 +104,8 @@ const Figure3D = ({ figure }: { figure: Figure }) => {
   const headRef = useRef<THREE.Mesh>(null);
   const leftArmRef = useRef<THREE.Mesh>(null);
   const rightArmRef = useRef<THREE.Mesh>(null);
+  // v2: spotlight point light that follows the figure
+  const spotlightRef = useRef<THREE.PointLight>(null);
 
   useFrame((state) => {
     const data = audioEngine.getAnalysisData();
@@ -58,38 +114,59 @@ const Figure3D = ({ figure }: { figure: Figure }) => {
     const { bass, mid, high } = data;
     const s = figure.sensitivity * figure.intensity;
     const speed = figure.speed;
+    const t = state.clock.elapsedTime;
+    const style = figure.danceStyle ?? 'fluid';
+    const { dy, dx, rotY, armMod, headMod } = applyDanceStyle(style, t, speed, bass, mid, high, s);
 
-    // Bounce with bass
-    meshRef.current.position.y = figure.position[1] + Math.sin(state.clock.elapsedTime * 10 * speed) * bass * 0.5 * s;
-    
-    // Rotate with mid
-    meshRef.current.rotation.y = figure.rotation[1] + Math.sin(state.clock.elapsedTime * speed) * mid * s;
+    meshRef.current.position.y = figure.position[1] + dy;
+    meshRef.current.position.x = figure.position[0] + dx;
+    meshRef.current.rotation.y = figure.rotation[1] + rotY;
 
-    // Head bob
     if (headRef.current) {
-      headRef.current.position.y = 1.6 + Math.sin(state.clock.elapsedTime * 15 * speed) * high * 0.2 * s;
+      headRef.current.position.y = 1.6 + headMod;
     }
 
-    // Arm movement
     if (leftArmRef.current && rightArmRef.current) {
-      leftArmRef.current.rotation.z = -Math.PI / 4 - mid * s * 2;
-      rightArmRef.current.rotation.z = Math.PI / 4 + mid * s * 2;
+      leftArmRef.current.rotation.z = -Math.PI / 4 - armMod;
+      rightArmRef.current.rotation.z = Math.PI / 4 + armMod;
+    }
+
+    // v2: spotlight tracks dancer, pulsing with bass
+    if (spotlightRef.current && figure.spotlight) {
+      spotlightRef.current.position.set(
+        figure.position[0] + dx,
+        figure.position[1] + dy + 3.5,
+        figure.position[2]
+      );
+      spotlightRef.current.intensity = 1.5 + bass * 3 * s;
     }
   });
 
   return (
-    <group 
-      ref={meshRef} 
-      position={figure.position} 
+    <group
+      ref={meshRef}
+      position={figure.position}
       rotation={figure.rotation}
       scale={figure.scale}
     >
+      {/* v2: per-figure spotlight that pulses with the dancer */}
+      {figure.spotlight && (
+        <pointLight
+          ref={spotlightRef}
+          color={figure.color}
+          intensity={1.5}
+          distance={8}
+          decay={2}
+          position={[0, 3.5, 0]}
+        />
+      )}
+
       {/* Body */}
       <mesh position={[0, 0.8, 0]}>
         <capsuleGeometry args={[0.3, 1, 4, 8]} />
         <meshStandardMaterial color={figure.color} emissive={figure.color} emissiveIntensity={0.5} />
       </mesh>
-      
+
       {/* Head */}
       <mesh ref={headRef} position={[0, 1.6, 0]}>
         <sphereGeometry args={[0.25, 16, 16]} />
@@ -119,25 +196,57 @@ const Figure3D = ({ figure }: { figure: Figure }) => {
   );
 };
 
+// v2: Beat-flash overlay — a translucent plane that flares with heavy bass drops
+const BeatFlash = () => {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const matRef = useRef<THREE.MeshBasicMaterial>(null);
+  const { stageAccentColor } = useStore();
+
+  useFrame(() => {
+    const data = audioEngine.getAnalysisData();
+    if (!data || !matRef.current) return;
+    // Flash only on hard bass hits (> 0.85)
+    const hit = data.bass > 0.85 ? (data.bass - 0.85) * 6 : 0;
+    matRef.current.opacity = hit * 0.18;
+  });
+
+  return (
+    <mesh ref={meshRef} position={[0, 5, -8]}>
+      <planeGeometry args={[60, 40]} />
+      <meshBasicMaterial
+        ref={matRef}
+        color={stageAccentColor}
+        transparent
+        opacity={0}
+        depthWrite={false}
+      />
+    </mesh>
+  );
+};
+
 const Stage3D = () => {
-  const { figures, background } = useStore();
+  const { figures, background, stageAccentColor } = useStore();
   const floorRef = useRef<THREE.Mesh>(null);
+  const gridRef = useRef<THREE.GridHelper>(null);
 
   useFrame(() => {
     const data = audioEngine.getAnalysisData();
     if (!data || !floorRef.current) return;
-    (floorRef.current.material as THREE.MeshStandardMaterial).emissiveIntensity = data.bass * 2;
+    const mat = floorRef.current.material as THREE.MeshStandardMaterial;
+    mat.emissiveIntensity = data.bass * 2;
+    mat.emissive.set(background === 'neon-grid' || background === 'gradient' ? stageAccentColor : '#333');
   });
 
   return (
     <>
       <ambientLight intensity={0.5} />
       <pointLight position={[10, 10, 10]} intensity={1} />
-      <spotLight position={[0, 10, 0]} angle={0.3} penumbra={1} intensity={2} castShadow />
-      
+      {/* v1: main stage spotlight now uses accent color */}
+      <spotLight position={[0, 10, 0]} angle={0.3} penumbra={1} intensity={2} castShadow color={stageAccentColor} />
+
       {background === 'stars' && <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />}
       {background === 'space' && <Stars radius={300} depth={60} count={20000} factor={7} saturation={1} fade speed={2} />}
-      
+
       {figures.filter(f => f.type === '3d').map(fig => (
         <Figure3D key={fig.id} figure={fig} />
       ))}
@@ -146,18 +255,25 @@ const Stage3D = () => {
         <FigureGLB key={fig.id} figure={fig} />
       ))}
 
+      {/* v2: beat-flash overlay */}
+      <BeatFlash />
+
       {/* Floor */}
       <mesh ref={floorRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.5, 0]} receiveShadow>
         <planeGeometry args={[20, 20]} />
-        <meshStandardMaterial 
-          color="#111" 
-          emissive={background === 'neon-grid' ? "#00d4ff" : "#333"} 
-          emissiveIntensity={0} 
+        <meshStandardMaterial
+          color="#111"
+          emissive={background === 'neon-grid' ? stageAccentColor : '#333'}
+          emissiveIntensity={0}
         />
       </mesh>
 
-      <gridHelper args={[20, 20, '#333', background === 'neon-grid' ? '#00d4ff' : '#222']} position={[0, -0.49, 0]} />
-      
+      {/* v1: grid color uses stageAccentColor */}
+      <gridHelper
+        args={[20, 20, '#333', background === 'neon-grid' ? stageAccentColor : '#222']}
+        position={[0, -0.49, 0]}
+      />
+
       <OrbitControls makeDefault minPolarAngle={0} maxPolarAngle={Math.PI / 1.75} />
     </>
   );
@@ -166,7 +282,7 @@ const Stage3D = () => {
 const Stage2D = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const { figures, background } = useStore();
+  const { figures, background, stageAccentColor } = useStore();
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -189,7 +305,7 @@ const Stage2D = () => {
     const render = () => {
       const data = audioEngine.getAnalysisData();
       const { width, height } = canvas;
-      
+
       // Background
       if (background === 'gradient') {
         const grad = ctx.createLinearGradient(0, 0, 0, height);
@@ -202,12 +318,24 @@ const Stage2D = () => {
       ctx.fillRect(0, 0, width, height);
 
       if (data) {
-        // Background pulse
-        ctx.strokeStyle = background === 'neon-grid' ? `rgba(0, 212, 255, ${data.bass * 0.2})` : `rgba(255, 255, 255, ${data.bass * 0.1})`;
+        // v1: background pulse uses stageAccentColor
+        const alpha = background === 'neon-grid' ? data.bass * 0.2 : data.bass * 0.1;
+        ctx.strokeStyle = background === 'neon-grid'
+          ? stageAccentColor + Math.round(alpha * 255).toString(16).padStart(2, '0')
+          : `rgba(255,255,255,${alpha})`;
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.arc(width / 2, height / 2, 100 + data.bass * 50, 0, Math.PI * 2);
         ctx.stroke();
+
+        // v2: second ring pulse ring at different freq (mid)
+        if (data.mid > 0.3) {
+          ctx.strokeStyle = `rgba(255,255,255,${data.mid * 0.08})`;
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.arc(width / 2, height / 2, 60 + data.mid * 80, 0, Math.PI * 2);
+          ctx.stroke();
+        }
 
         if (background === 'stars') {
           for (let i = 0; i < 50; i++) {
@@ -219,42 +347,73 @@ const Stage2D = () => {
         // Figures
         figures.filter(f => f.type === '2d').forEach(fig => {
           const x = (fig.position[0] + 2) * (width / 4);
-          const y = height - 100 - (data.bass * 50 * fig.sensitivity * fig.intensity);
-          
+          const style = fig.danceStyle ?? 'fluid';
+          const t = Date.now() / 1000 * fig.speed;
+          const s = fig.sensitivity * fig.intensity;
+
+          // v1: dance style affects vertical position
+          let yOffset = 0;
+          switch (style) {
+            case 'sharp':
+              yOffset = Math.sign(Math.sin(t * 10)) * data.bass * 50 * s;
+              break;
+            case 'bounce':
+              yOffset = Math.abs(Math.sin(t * 8)) * data.bass * 65 * s;
+              break;
+            case 'groove':
+              yOffset = Math.sin(t * 6) * data.bass * 30 * s;
+              break;
+            case 'fluid':
+            default:
+              yOffset = data.bass * 50 * fig.sensitivity * fig.intensity;
+          }
+          const y = height - 100 - yOffset;
+
           ctx.strokeStyle = fig.color;
           ctx.lineWidth = 4 * fig.scale;
           ctx.lineCap = 'round';
 
-          const speed = fig.speed;
-          const time = Date.now() / 1000 * speed;
+          // v1: groove style adds lateral sway
+          const xSway = style === 'groove' ? Math.sin(t * 3) * data.mid * 20 * s : 0;
 
           // Body
           ctx.beginPath();
-          ctx.moveTo(x, y);
-          ctx.lineTo(x, y - 60 * fig.scale);
+          ctx.moveTo(x + xSway, y);
+          ctx.lineTo(x + xSway, y - 60 * fig.scale);
           ctx.stroke();
 
           // Head
           ctx.beginPath();
-          ctx.arc(x, y - (75 + data.high * 10) * fig.scale, 10 * fig.scale, 0, Math.PI * 2);
+          ctx.arc(x + xSway, y - (75 + data.high * 10) * fig.scale, 10 * fig.scale, 0, Math.PI * 2);
           ctx.stroke();
 
           // Arms
-          const armSwing = Math.sin(time * 8) * 20 * data.mid * fig.sensitivity * fig.intensity;
+          const armSwing = Math.sin(t * 8) * 20 * data.mid * fig.sensitivity * fig.intensity;
           ctx.beginPath();
-          ctx.moveTo(x, y - 50 * fig.scale);
-          ctx.lineTo(x - 30 * fig.scale, y - (40 * fig.scale) + armSwing);
-          ctx.moveTo(x, y - 50 * fig.scale);
-          ctx.lineTo(x + 30 * fig.scale, y - (40 * fig.scale) - armSwing);
+          ctx.moveTo(x + xSway, y - 50 * fig.scale);
+          ctx.lineTo(x + xSway - 30 * fig.scale, y - (40 * fig.scale) + armSwing);
+          ctx.moveTo(x + xSway, y - 50 * fig.scale);
+          ctx.lineTo(x + xSway + 30 * fig.scale, y - (40 * fig.scale) - armSwing);
           ctx.stroke();
 
           // Legs
           ctx.beginPath();
-          ctx.moveTo(x, y);
-          ctx.lineTo(x - 20 * fig.scale, y + 40 * fig.scale);
-          ctx.moveTo(x, y);
-          ctx.lineTo(x + 20 * fig.scale, y + 40 * fig.scale);
+          ctx.moveTo(x + xSway, y);
+          ctx.lineTo(x + xSway - 20 * fig.scale, y + 40 * fig.scale);
+          ctx.moveTo(x + xSway, y);
+          ctx.lineTo(x + xSway + 20 * fig.scale, y + 40 * fig.scale);
           ctx.stroke();
+
+          // v2: spotlight glow under dancer when spotlight enabled
+          if (fig.spotlight) {
+            const grd = ctx.createRadialGradient(x + xSway, y + 20, 5, x + xSway, y + 20, 60 + data.bass * 30 * s);
+            grd.addColorStop(0, fig.color + '44');
+            grd.addColorStop(1, fig.color + '00');
+            ctx.fillStyle = grd;
+            ctx.beginPath();
+            ctx.ellipse(x + xSway, y + 20, 60 + data.bass * 30 * s, 20, 0, 0, Math.PI * 2);
+            ctx.fill();
+          }
         });
       }
 
@@ -266,7 +425,7 @@ const Stage2D = () => {
       cancelAnimationFrame(animationFrame);
       window.removeEventListener('resize', handleResize);
     };
-  }, [figures, background]);
+  }, [figures, background, stageAccentColor]);
 
   return (
     <div ref={containerRef} className="w-full h-full">
@@ -293,10 +452,10 @@ export const StageViewport = () => {
       ) : (
         <Stage2D />
       )}
-      
+
       {/* View Mode Toggle Overlay */}
       <div className="absolute top-6 right-6 flex gap-2">
-        <button 
+        <button
           onClick={() => useStore.getState().setViewMode('2d')}
           className={cn(
             "p-2 rounded-lg border transition-all",
@@ -305,7 +464,7 @@ export const StageViewport = () => {
         >
           <Layers size={20} />
         </button>
-        <button 
+        <button
           onClick={() => useStore.getState().setViewMode('3d')}
           className={cn(
             "p-2 rounded-lg border transition-all",
@@ -318,7 +477,7 @@ export const StageViewport = () => {
 
       {/* Transform Toggle Button (Bottom Right) */}
       <div className="absolute bottom-6 right-6">
-        <button 
+        <button
           onClick={() => setTransformOpen(!isTransformOpen)}
           className={cn(
             "p-3 rounded-full border transition-all shadow-xl",
@@ -334,7 +493,7 @@ export const StageViewport = () => {
       {/* Transform Controls Overlay */}
       <AnimatePresence>
         {selectedFigure && isTransformOpen && (
-          <motion.div 
+          <motion.div
             initial={{ y: 100, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 100, opacity: 0 }}
@@ -351,7 +510,7 @@ export const StageViewport = () => {
                 <label className="text-[9px] text-slate-500 uppercase">Position (X, Y, Z)</label>
                 <div className="grid grid-cols-3 gap-2">
                   {[0, 1, 2].map(i => (
-                    <input 
+                    <input
                       key={i}
                       type="number" step="0.1"
                       value={selectedFigure.position[i]}
@@ -371,7 +530,7 @@ export const StageViewport = () => {
                 <label className="text-[9px] text-slate-500 uppercase">Rotation (X, Y, Z)</label>
                 <div className="grid grid-cols-3 gap-2">
                   {[0, 1, 2].map(i => (
-                    <input 
+                    <input
                       key={i}
                       type="number" step="0.1"
                       value={selectedFigure.rotation[i]}
@@ -391,9 +550,9 @@ export const StageViewport = () => {
                 <label className="text-[9px] text-slate-500 uppercase flex justify-between">
                   Scale <span>{selectedFigure.scale.toFixed(2)}</span>
                 </label>
-                <input 
-                  type="range" min="0.1" max="5" step="0.01" 
-                  value={selectedFigure.scale} 
+                <input
+                  type="range" min="0.1" max="5" step="0.01"
+                  value={selectedFigure.scale}
                   onChange={(e) => handleUpdateFigure(selectedFigure.id, { scale: parseFloat(e.target.value) })}
                   className="w-full accent-accent-cool h-1"
                 />
