@@ -142,7 +142,12 @@ const Sidebar = () => {
 
   // v1: commit inline name edit
   const commitNameEdit = async (figId: string) => {
-    if (!editingNameValue.trim()) return;
+    if (!editingNameValue.trim()) {
+      // Empty input — cancel edit without saving
+      setEditingNameId(null);
+      setEditingNameValue('');
+      return;
+    }
     await handleUpdateFigure(figId, { name: editingNameValue.trim() });
     setEditingNameId(null);
     setEditingNameValue('');

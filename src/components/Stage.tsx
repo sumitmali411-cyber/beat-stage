@@ -68,7 +68,8 @@ function applyDanceStyle(
 }
 
 const FigureGLB = ({ figure }: { figure: Figure }) => {
-  const { scene } = useGLTF(figure.url!);
+  if (!figure.url) return null;
+  const { scene } = useGLTF(figure.url);
   const groupRef = useRef<THREE.Group>(null);
 
   useFrame((state) => {

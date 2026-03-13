@@ -147,9 +147,8 @@ export class AudioEngine {
     if (this.gainNode) {
       this.gainNode.gain.value = volume;
     }
-    if (this.isStreaming && this.mediaElement) {
-      this.mediaElement.volume = volume;
-    }
+    // Do NOT also set mediaElement.volume — it is locked to 1 so the gain node
+    // is the sole volume control for both buffered and streaming sources.
   }
 
   /** Returns 0–1 progress through the current song, or 0 if unknown */
