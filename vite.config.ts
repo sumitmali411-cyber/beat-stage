@@ -7,9 +7,11 @@ export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
   return {
     plugins: [react(), tailwindcss()],
-    define: {
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-    },
+    // NOTE: never `define` GEMINI_API_KEY here. Anything defined at build time
+    // is inlined into the client bundle and readable by every visitor. Nothing
+    // under src/ uses it; if server-side AI calls are added later, keep the key
+    // in server.ts and expose a proxy endpoint instead.
+
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
